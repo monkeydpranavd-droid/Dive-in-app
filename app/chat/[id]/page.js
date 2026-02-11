@@ -1,78 +1,186 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-export default function ProfilePage() {
-  const { id } = useParams(); // ID of profile being viewed
+export default function ChatPage() {
+  const { id: convoId } = useParams();
 
-  const [profile, setProfile] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
 
+  const bottomRef = useRef(null);
+
+  // =========================
+  // GET USER
+  // =========================
   useEffect(() => {
-    getCurrentUser();
-    fetchProfile();
+    getUser();
   }, []);
 
-  // ✅ Get logged in user
-  async function getCurrentUser() {
+  async function getUser() {
     const { data } = await supabase.auth.getUser();
-    setCurrentUser(data.user);
+    setUser(data.user);
   }
 
-  // ✅ Fetch profile you're viewing
-  async function fetchProfile() {
+  // =========================
+  // FETCH MESSAGES
+  // =========================
+  useEffect(() => {
+    if (!convoId) return;
+
+    fetchMessages();
+    subscribeMessages();
+  }, [convoId]);
+
+  async function fetchMessages() {
     const { data } = await supabase
-      .from("profiles")
+      .from("messages")
       .select("*")
-      .eq("id", id)
+      .eq("conversation_id", convoId)
+      .order("created_at", { ascending: true });
+
+    setMessages(data || []);
+    scrollDown();
+  }
+
+  // =========================
+  // REALTIME SUBSCRIPTION
+  // =========================
+  function subscribeMessages() {
+    const channel = supabase
+      .channel("chat-room")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${convoId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new]);
+          scrollDown();
+          markSeen(payload.new.id);
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }
+
+  // =========================
+  // SEND MESSAGE
+  // =========================
+  async function sendMessage() {
+    if (!text.trim() || !user) return;
+
+    const { data, error } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: convoId,
+        sender_id: user.id,
+        content: text,
+      })
+      .select()
       .single();
 
-    setProfile(data);
-  }
-
-  // ✅ Send collaboration request
-  async function sendCollabRequest() {
-    if (!currentUser || !profile) return;
-
-    const { error } = await supabase
-      .from("collab_requests")
-      .insert({
-        sender_id: currentUser.id,
-        receiver_id: profile.id,
-        message: "Let's collaborate!",
-        status: "pending"
-      });
-
     if (!error) {
-      alert("🤝 Collaboration request sent!");
-    } else {
-      alert("Error sending request");
-      console.log(error);
+      setMessages((prev) => [...prev, data]);
+      setText("");
+      scrollDown();
     }
   }
 
-  if (!profile) return null;
+  // =========================
+  // SEEN STATUS
+  // =========================
+  async function markSeen(messageId) {
+    await supabase
+      .from("messages")
+      .update({ seen: true })
+      .eq("id", messageId)
+      .neq("sender_id", user?.id);
+  }
+
+  // =========================
+  // AUTO SCROLL
+  // =========================
+  function scrollDown() {
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }
+
+  if (!user) return null;
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>{profile.username}</h2>
+    <div
+      style={{
+        maxWidth: 600,
+        margin: "auto",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* HEADER */}
+      <h3>💬 Chat</h3>
 
-      {/* ✅ SHOW BUTTON ONLY IF NOT YOUR PROFILE */}
-      {currentUser?.id !== profile.id && (
-        <button
-          onClick={sendCollabRequest}
-          style={{
-            padding: 10,
-            background: "black",
-            color: "white",
-            borderRadius: 8
-          }}
-        >
-          🤝 Collaborate
-        </button>
-      )}
+      {/* MESSAGES */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          border: "1px solid #333",
+          padding: 10,
+        }}
+      >
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              textAlign: m.sender_id === user.id ? "right" : "left",
+              margin: "8px 0",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-block",
+                background:
+                  m.sender_id === user.id ? "#4caf50" : "#444",
+                padding: 10,
+                borderRadius: 10,
+                color: "white",
+              }}
+            >
+              {m.content}
+            </div>
+
+            {m.sender_id === user.id && (
+              <div style={{ fontSize: 12 }}>
+                {m.seen ? "✓✓ Seen" : "✓ Sent"}
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* INPUT */}
+      <div style={{ display: "flex", gap: 10, padding: 10 }}>
+        <input
+          style={{ flex: 1, padding: 10 }}
+          placeholder="Type message..."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+
+        <button onClick={sendMessage}>Send</button>
+      </div>
     </div>
   );
 }

@@ -14,10 +14,12 @@ export default function ProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
 
   useEffect(() => {
-    getUser();
-    fetchProfile();
-    fetchPosts();
-  }, []);
+    if (id) {
+      getUser();
+      fetchProfile();
+      fetchPosts();
+    }
+  }, [id]);
 
   // =====================
   // GET USER
@@ -37,7 +39,7 @@ export default function ProfilePage() {
       .from("profiles")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle(); // ✅ safer
 
     setProfile(data);
   }
@@ -69,10 +71,22 @@ export default function ProfilePage() {
     setIsFollowing(!!data);
   }
 
+  // =====================
+  // FOLLOW
+  // =====================
   async function follow() {
+    if (!user) return;
+
     await supabase.from("follows").insert({
       follower_id: user.id,
       following_id: id,
+    });
+
+    // ✅ notify
+    await supabase.from("notifications").insert({
+      user_id: id,
+      sender_id: user.id,
+      type: "follow"
     });
 
     setIsFollowing(true);
@@ -89,59 +103,90 @@ export default function ProfilePage() {
   }
 
   // =====================
-  // 💬 START CHAT (FIXED)
+  // 🤝 COLLAB REQUEST
+  // =====================
+  async function sendCollabRequest() {
+    if (!user) return;
+
+    if (user.id === id) {
+      alert("You can't collaborate with yourself 😅");
+      return;
+    }
+
+    const { data: existing } = await supabase
+      .from("collab_requests")
+      .select("*")
+      .eq("sender_id", user.id)
+      .eq("receiver_id", id)
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (existing) {
+      alert("Request already sent!");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("collab_requests")
+      .insert({
+        sender_id: user.id,
+        receiver_id: id,
+        message: "Let's collaborate!",
+        status: "pending"
+      });
+
+    if (!error) {
+      await supabase.from("notifications").insert({
+        user_id: id,
+        sender_id: user.id,
+        type: "collab"
+      });
+
+      alert("🤝 Collaboration request sent!");
+    }
+  }
+
+  // =====================
+  // 💬 START CHAT
   // =====================
   async function startChat() {
     if (!user) return;
 
-    try {
-      // 1️⃣ Get all conversations current user is in
-      const { data: myConvos } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id")
-        .eq("user_id", user.id);
+    // find existing
+    const { data: myConvos } = await supabase
+      .from("conversation_participants")
+      .select("conversation_id")
+      .eq("user_id", user.id);
 
-      if (myConvos?.length) {
-        for (let c of myConvos) {
-          // check if target user is in same convo
-          const { data: match } = await supabase
-            .from("conversation_participants")
-            .select("*")
-            .eq("conversation_id", c.conversation_id)
-            .eq("user_id", id)
-            .maybeSingle();
+    if (myConvos?.length) {
+      for (let c of myConvos) {
+        const { data: match } = await supabase
+          .from("conversation_participants")
+          .select("*")
+          .eq("conversation_id", c.conversation_id)
+          .eq("user_id", id)
+          .maybeSingle();
 
-          if (match) {
-            router.push(`/chat/${c.conversation_id}`);
-            return;
-          }
+        if (match) {
+          router.push(`/chat/${c.conversation_id}`);
+          return;
         }
       }
-
-      // 2️⃣ Create new conversation
-      const { data: convo, error } = await supabase
-        .from("conversations")
-        .insert({})
-        .select()
-        .single();
-
-      if (error || !convo) {
-        console.error("Conversation error:", error);
-        return;
-      }
-
-      // 3️⃣ Add participants
-      await supabase.from("conversation_participants").insert([
-        { conversation_id: convo.id, user_id: user.id },
-        { conversation_id: convo.id, user_id: id },
-      ]);
-
-      // 4️⃣ Redirect
-      router.push(`/chat/${convo.id}`);
-
-    } catch (err) {
-      console.error("Chat error:", err);
     }
+
+    // create new
+    const { data: convo } = await supabase
+      .from("conversations")
+      .insert({})
+      .select()
+      .single();
+
+    await supabase.from("conversation_participants").insert([
+      { conversation_id: convo.id, user_id: user.id },
+      { conversation_id: convo.id, user_id: id },
+    ]);
+
+    router.push(`/chat/${convo.id}`);
   }
 
   if (!profile) return <p>Loading...</p>;
@@ -166,11 +211,10 @@ export default function ProfilePage() {
 
         {user?.id !== id && (
           <>
-            {isFollowing ? (
-              <button onClick={unfollow}>Unfollow</button>
-            ) : (
-              <button onClick={follow}>Follow</button>
-            )}
+            {isFollowing
+              ? <button onClick={unfollow}>Unfollow</button>
+              : <button onClick={follow}>Follow</button>
+            }
 
             <button
               onClick={startChat}
@@ -183,6 +227,19 @@ export default function ProfilePage() {
               }}
             >
               💬 Message
+            </button>
+
+            <button
+              onClick={sendCollabRequest}
+              style={{
+                marginLeft: 10,
+                background: "#FF9800",
+                color: "white",
+                padding: "6px 12px",
+                borderRadius: 6
+              }}
+            >
+              🤝 Collaborate
             </button>
           </>
         )}

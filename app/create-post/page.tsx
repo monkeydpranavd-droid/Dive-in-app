@@ -17,6 +17,9 @@ export default function CreatePost() {
   const [projectGoal, setProjectGoal] = useState("");
   const [deadline, setDeadline] = useState("");
 
+  // ✅ NEW — NICHE STATE
+  const [niche, setNiche] = useState("music");
+
   const createPost = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -35,7 +38,10 @@ export default function CreatePost() {
       post_type: postType,
       looking_for: postType === "collab" ? lookingFor : null,
       project_goal: postType === "collab" ? projectGoal : null,
-      deadline: postType === "collab" ? deadline : null
+      deadline: postType === "collab" ? deadline : null,
+
+      // ✅ NEW — NICHE SAVE
+      niche
     });
 
     if (error) {
@@ -57,6 +63,19 @@ export default function CreatePost() {
       <select onChange={(e) => setPostType(e.target.value)}>
         <option value="normal">Normal Post</option>
         <option value="collab">Collaboration Request</option>
+      </select>
+
+      <br /><br />
+
+      {/* ✅ NEW — NICHE SELECT */}
+      <label>Niche</label>
+      <br />
+      <select onChange={(e) => setNiche(e.target.value)}>
+        <option value="music">🎵 Music</option>
+        <option value="dance">💃 Dance</option>
+        <option value="writing">✍️ Writing</option>
+        <option value="art">🎨 Art</option>
+        <option value="video">🎥 Video</option>
       </select>
 
       <br /><br />
