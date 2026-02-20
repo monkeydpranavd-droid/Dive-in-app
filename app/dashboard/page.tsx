@@ -21,6 +21,10 @@ export default function Dashboard() {
   const [expandedComments, setExpandedComments] = useState({});
   const notifRef = useRef(null);
 
+  // Refs for cleanup
+  const notificationsChannelRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+
   function toggleComments(postId) {
     setExpandedComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
   }
@@ -28,7 +32,16 @@ export default function Dashboard() {
   // =====================
   // GET USER
   // =====================
-  useEffect(() => { getUser(); }, []);
+  useEffect(() => {
+    getUser();
+
+    // Cleanup notifications channel on unmount
+    return () => {
+      if (notificationsChannelRef.current) {
+        supabase.removeChannel(notificationsChannelRef.current);
+      }
+    };
+  }, []);
 
   async function getUser() {
     const { data } = await supabase.auth.getUser();
@@ -43,7 +56,12 @@ export default function Dashboard() {
   // REALTIME NOTIFICATIONS
   // =====================
   function subscribeNotifications(uid) {
-    supabase
+    // Clean up existing channel if any
+    if (notificationsChannelRef.current) {
+      supabase.removeChannel(notificationsChannelRef.current);
+    }
+
+    const channel = supabase
       .channel("notifications")
       .on(
         "postgres_changes",
@@ -55,6 +73,8 @@ export default function Dashboard() {
         }
       )
       .subscribe();
+
+    notificationsChannelRef.current = channel;
   }
 
   async function markNotificationsRead() {
@@ -194,8 +214,18 @@ export default function Dashboard() {
   // SEARCH
   // =====================
   useEffect(() => {
-    const d = setTimeout(searchUsers, 400);
-    return () => clearTimeout(d);
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(searchUsers, 400);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [search]);
 
   async function searchUsers() {
