@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [selectedNiche, setSelectedNiche] = useState("all");
-  const [expandedComments, setExpandedComments] = useState({});
+  const [expandedComments, setExpandedComments] = useState<{ [key: string]: boolean }>({});
   const notifRef = useRef(null);
 
   // Refs for cleanup
