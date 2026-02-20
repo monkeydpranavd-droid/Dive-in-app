@@ -11,7 +11,7 @@ export default function Dashboard() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [commentInputs, setCommentInputs] = useState({});
+  const [commentInputs, setCommentInputs] = useState<{ [key: string]: string }>({});
   const [notifications, setNotifications] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
 
