@@ -25,7 +25,7 @@ export default function Dashboard() {
   const notificationsChannelRef = useRef(null);
   const searchTimeoutRef = useRef(null);
 
-  function toggleComments(postId) {
+  function toggleComments(postId: string) {
     setExpandedComments((prev) => ({ ...prev, [postId]: !prev[postId] }));
   }
 
