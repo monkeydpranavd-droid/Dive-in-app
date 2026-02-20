@@ -7,20 +7,26 @@ import { supabase } from "@/lib/supabaseClient";
 export default function EditProfile() {
   const router = useRouter();
 
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<any>(null);
   const [username, setUsername] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  // New profile fields
+  const [niche, setNiche] = useState("");
+  const [skills, setSkills] = useState("");
 
   useEffect(() => {
     getProfile();
   }, []);
 
-  // ✅ GET USER + PROFILE
+  // =====================
+  // GET USER + PROFILE
+  // =====================
   async function getProfile() {
-    const { data } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
 
-    if (!data.user) {
+    if (error || !data.user) {
       router.push("/login");
       return;
     }
@@ -29,55 +35,81 @@ export default function EditProfile() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("username, avatar_url")
+      .select("username, avatar_url, niche, skills")
       .eq("id", data.user.id)
       .single();
 
     if (profile) {
       setUsername(profile.username || "");
       setAvatarUrl(profile.avatar_url || "");
+      setNiche(profile.niche || "");
+      setSkills(profile.skills || "");
     }
   }
 
-  // ✅ AVATAR UPLOAD
+  // =====================
+  // AVATAR UPLOAD
+  // =====================
   async function uploadAvatar(e) {
     try {
-      setUploading(true);
+      if (!user) {
+        alert("User not loaded yet.");
+        return;
+      }
 
-      const file = e.target.files[0];
+      const file = e.target.files?.[0];
       if (!file) return;
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}.${fileExt}`;
+      setUploading(true);
 
-      // Upload to Supabase Storage
-      const { error } = await supabase.storage
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
         .from("avatars")
         .upload(fileName, file, { upsert: true });
 
-      if (error) throw error;
+      if (uploadError) {
+        console.error(uploadError);
+        alert(uploadError.message);
+        return;
+      }
 
       const { data } = supabase.storage
         .from("avatars")
         .getPublicUrl(fileName);
 
-      setAvatarUrl(data.publicUrl);
+      if (data?.publicUrl) {
+        setAvatarUrl(data.publicUrl);
+      }
 
     } catch (err) {
-      alert("Upload failed");
-      console.log(err);
+      console.error("Upload failed:", err);
+      alert("Upload failed. Check console.");
     } finally {
       setUploading(false);
     }
   }
 
-  // ✅ SAVE PROFILE
+  // =====================
+  // SAVE PROFILE
+  // =====================
   async function saveProfile() {
-    await supabase.from("profiles").upsert({
+    if (!user) return;
+
+    const { error } = await supabase.from("profiles").upsert({
       id: user.id,
       username: username,
       avatar_url: avatarUrl,
+      niche: niche,
+      skills: skills,
     });
+
+    if (error) {
+      console.error(error);
+      alert("Failed to update profile.");
+      return;
+    }
 
     alert("Profile updated!");
     router.push("/dashboard");
@@ -98,6 +130,7 @@ export default function EditProfile() {
           />
         )}
 
+        {/* Avatar Upload */}
         <div className="ds-form-group">
           <label>Upload Avatar</label>
           <input
@@ -106,9 +139,12 @@ export default function EditProfile() {
             className="ds-input"
             accept="image/*"
           />
-          {uploading && <p className="ds-text-muted mt-2">Uploading...</p>}
+          {uploading && (
+            <p className="ds-text-muted mt-2">Uploading...</p>
+          )}
         </div>
 
+        {/* Username */}
         <div className="ds-form-group">
           <label>Username</label>
           <input
@@ -119,11 +155,46 @@ export default function EditProfile() {
           />
         </div>
 
+        {/* Niche */}
+        <div className="ds-form-group">
+          <label>Niche</label>
+          <select
+            className="ds-input"
+            value={niche}
+            onChange={(e) => setNiche(e.target.value)}
+          >
+            <option value="">Select your niche</option>
+            <option value="music">Music</option>
+            <option value="dance">Dance</option>
+            <option value="writing">Writing</option>
+            <option value="art">Art</option>
+            <option value="video">Video</option>
+          </select>
+        </div>
+
+        {/* Skills */}
+        <div className="ds-form-group">
+          <label>Skills</label>
+          <input
+            className="ds-input"
+            value={skills}
+            onChange={(e) => setSkills(e.target.value)}
+            placeholder="Singer, Editor, Poet..."
+          />
+        </div>
+
         <div className="ds-form-row mt-4">
-          <button className="ds-btn ds-btn-primary" onClick={saveProfile}>
+          <button
+            className="ds-btn ds-btn-primary"
+            onClick={saveProfile}
+          >
             Save Profile
           </button>
-          <button className="ds-btn ds-btn-secondary" onClick={() => router.push("/dashboard")}>
+
+          <button
+            className="ds-btn ds-btn-secondary"
+            onClick={() => router.push("/dashboard")}
+          >
             Cancel
           </button>
         </div>
